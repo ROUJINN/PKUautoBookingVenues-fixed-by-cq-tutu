@@ -325,6 +325,13 @@ def click_submit_order(driver):
 def verify(driver, username, pass_word, soft_id):
     print("进入安全验证")
     log_str = "进入安全验证\n"
+    if not all([username.strip(), pass_word.strip(), soft_id.strip()]):
+        driver.switch_to.window(driver.window_handles[-1])
+        print("未配置超级鹰账号，切换为手动验证码模式。请在浏览器里完成安全验证，然后回到终端按回车继续。")
+        input("完成安全验证后按回车继续：")
+        log_str += "手动安全验证完成\n"
+        return log_str
+
     # 创建ActionChains对象
     actions = ActionChains(driver)
     target_element = driver.find_element(By.XPATH,

@@ -4,8 +4,8 @@ from time import sleep
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as Chrome_Options
+from selenium.webdriver.edge.options import Options as Edge_Options
 from selenium.webdriver.firefox.options import Options as Firefox_Options
-from selenium.webdriver.firefox.service import Service
 import warnings
 import sys
 import multiprocessing as mp
@@ -70,6 +70,7 @@ def page(config, browser="chrome"):
 
     log_str = ""
     status = True
+    manual_verify = not all([username.strip(), pass_word.strip(), soft_id.strip()])
     start_time_list_new, end_time_list_new, delta_day_list, log_exceeds = judge_exceeds_days_limit(start_time, end_time)
     log_str += log_exceeds
     if len(start_time_list_new) == 0:
@@ -77,16 +78,23 @@ def page(config, browser="chrome"):
         return False
     if browser == "chrome":
         chrome_options = Chrome_Options()
-        chrome_options.add_argument("--headless")
-        driver = webdriver.Chrome(
-            service=Service(executable_path=r'.\chromedriver.exe'))
+        if not manual_verify:
+            chrome_options.add_argument("--headless")
+        driver = webdriver.Chrome(options=chrome_options)
         # executable_path=sys_path(browser="chrome"),
         # service_args=['--ignore-ssl-errors=true', '--ssl-protocol=TLSv1'])
         print('chrome launched\n')
+    elif browser == "edge":
+        edge_options = Edge_Options()
+        if not manual_verify:
+            edge_options.add_argument("--headless")
+        driver = webdriver.Edge(options=edge_options)
+        print('edge launched\n')
     elif browser == "firefox":
         firefox_options = Firefox_Options()
-        firefox_options.add_argument("--headless")
-        driver = webdriver.Firefox(service=Service(executable_path=r'.\geckodriver.exe'))
+        if not manual_verify:
+            firefox_options.add_argument("--headless")
+        driver = webdriver.Firefox(options=firefox_options)
         # executable_path=sys_path(browser="firefox"))
         print('firefox launched\n')
     else:
@@ -178,7 +186,7 @@ def multi_run(lst_conf, browser="chrome"):
 
 
 if __name__ == '__main__':
-    browser = "firefox"
+    browser = "edge"
 
     # lst_conf = env_check()
     # print(lst_conf)
