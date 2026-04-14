@@ -1,16 +1,15 @@
 from configparser import ConfigParser
 from os import stat
 from time import sleep
-import sys
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as Chrome_Options
 from selenium.webdriver.edge.options import Options as Edge_Options
 from selenium.webdriver.firefox.options import Options as Firefox_Options
 import warnings
+import sys
 import multiprocessing as mp
 from env_check import *
-from monitor import monitor
 from page_func import *
 from notice import *
 
@@ -189,11 +188,11 @@ def multi_run(lst_conf, browser="chrome"):
 if __name__ == '__main__':
     browser = "edge"
 
-    if len(sys.argv) > 1 and sys.argv[1] == 'monitor':
-        config_name = sys.argv[2] if len(sys.argv) > 2 else 'config0.ini'
-        monitor(config_name)
-    else:
-        for i in range(3):
-            status_main = page('config0.ini', browser)
-            if status_main:
-                break
+    # lst_conf = env_check()
+    # print(lst_conf)
+    # multi_run(lst_conf, browser)
+    # sequence_run(lst_conf, browser)
+    for i in range(3):
+        status_main = page('config0.ini', browser)
+        if status_main:
+            break
