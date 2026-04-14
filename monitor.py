@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.options import Options as Chrome_Options
 from selenium.webdriver.edge.options import Options as Edge_Options
 from selenium.webdriver.firefox.options import Options as Firefox_Options
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -20,6 +21,9 @@ DATE_TAB_CONTAINER_XPATH = '/html/body/div[1]/div/div/div[3]/div[2]/div/div[1]/d
 NEXT_PAGE_XPATH = '//*[@id="scrollTable"]/table/tbody/tr[last()]/td[last()]/div/i'
 DEFAULT_MONITOR_FILE = 'monitor_rules.txt'
 DEFAULT_VENUES = ['羽毛球场', '羽毛球馆']
+PORTAL_LOGIN_URL = ('https://iaaa.pku.edu.cn/iaaa/oauth.jsp?appID=portal2017'
+                    '&appName=%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6%E6%A0%A1%E5%86%85%E4%BF%A1%E6%81%AF%E9%97%A8%E6%88%B7%E6%96%B0%E7%89%88'
+                    '&redirectUrl=https://portal.pku.edu.cn/portal2017/ssoLogin.do')
 
 
 def wait_until_ready(driver, timeout=10):
@@ -35,6 +39,9 @@ def load_monitor_config(config):
     monitor_file = conf.get('monitor', 'state_file', fallback=DEFAULT_MONITOR_FILE).strip() or DEFAULT_MONITOR_FILE
     monitor_browser = conf.get('monitor', 'browser', fallback='edge').strip() or 'edge'
     monitor_headless = conf.getboolean('monitor', 'headless', fallback=True)
+    manual_login = conf.getboolean('monitor', 'manual_login', fallback=False)
+    user_data_dir = conf.get('monitor', 'user_data_dir', fallback='').strip()
+    profile_directory = conf.get('monitor', 'profile_directory', fallback='Default').strip() or 'Default'
     venues_raw = conf.get('monitor', 'venues', fallback=','.join(DEFAULT_VENUES))
     venues = [item.strip() for item in re.split(r'[,，]', venues_raw) if item.strip()]
     if not venues:
@@ -48,20 +55,29 @@ def load_monitor_config(config):
         'state_file': monitor_file,
         'browser': monitor_browser.lower(),
         'headless': monitor_headless,
+        'manual_login': manual_login,
+        'user_data_dir': user_data_dir,
+        'profile_directory': profile_directory,
         'venues': venues,
     }
 
 
-def build_driver(browser='edge', headless=True):
+def build_driver(browser='edge', headless=True, user_data_dir='', profile_directory='Default'):
     if browser == "chrome":
         chrome_options = Chrome_Options()
         if headless:
             chrome_options.add_argument("--headless=new")
+        if user_data_dir:
+            chrome_options.add_argument(f'--user-data-dir={os.path.abspath(user_data_dir)}')
+            chrome_options.add_argument(f'--profile-directory={profile_directory}')
         return webdriver.Chrome(options=chrome_options)
     if browser == "edge":
         edge_options = Edge_Options()
         if headless:
             edge_options.add_argument("--headless=new")
+        if user_data_dir:
+            edge_options.add_argument(f'--user-data-dir={os.path.abspath(user_data_dir)}')
+            edge_options.add_argument(f'--profile-directory={profile_directory}')
         return webdriver.Edge(options=edge_options)
     if browser == "firefox":
         firefox_options = Firefox_Options()
@@ -78,6 +94,12 @@ def ensure_monitor_file(path):
         fw.write("# 写日期可忽略整天，例如：2026-04-18\n")
         fw.write("# 也支持：IGNORE 2026-04-18\n")
         fw.write("# ALERT 行由程序自动追加；删掉某条 ALERT 后，若再次检测到同一空位，会重新提醒\n")
+
+
+def wait_for_manual_login(driver):
+    driver.get(PORTAL_LOGIN_URL)
+    print("已打开登录页面，请在浏览器中手动完成登录。")
+    input("登录完成并确认页面可正常访问后，回到终端按回车开始监测：")
 
 
 def read_monitor_state(path):
@@ -146,7 +168,14 @@ def get_visible_day_count(driver):
 
 def click_day_tab(driver, day_index):
     wait_until_ready(driver)
-    driver.find_element(By.XPATH, f'{DATE_TAB_CONTAINER_XPATH}/div[{day_index + 1}]').click()
+    target = driver.find_element(By.XPATH, f'{DATE_TAB_CONTAINER_XPATH}/div[{day_index + 1}]')
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target)
+    time.sleep(0.2)
+    try:
+        WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, f'{DATE_TAB_CONTAINER_XPATH}/div[{day_index + 1}]')))
+        target.click()
+    except (ElementClickInterceptedException, TimeoutException):
+        driver.execute_script("arguments[0].click();", target)
     time.sleep(0.5)
     wait_until_ready(driver)
 
@@ -257,15 +286,25 @@ def monitor(config='config0.ini'):
     monitor_conf = load_monitor_config(config)
     state_path = os.path.abspath(monitor_conf['state_file'])
     ensure_monitor_file(state_path)
+    driver = None
 
-    while True:
-        driver = None
-        try:
-            driver = build_driver(monitor_conf['browser'], monitor_conf['headless'])
-            print(f"[{datetime.datetime.now()}] 启动浏览器并登录")
-            login(driver, monitor_conf['user_name'], monitor_conf['password'])
+    try:
+        while True:
+            if driver is None:
+                driver = build_driver(
+                    monitor_conf['browser'],
+                    monitor_conf['headless'],
+                    monitor_conf['user_data_dir'],
+                    monitor_conf['profile_directory'],
+                )
+                print(f"[{datetime.datetime.now()}] 启动浏览器")
+                if monitor_conf['manual_login']:
+                    wait_for_manual_login(driver)
+                else:
+                    print(f"[{datetime.datetime.now()}] 开始自动登录")
+                    login(driver, monitor_conf['user_name'], monitor_conf['password'])
 
-            while True:
+            try:
                 print(f"[{datetime.datetime.now()}] 开始新一轮监测")
                 ignore_dates, alerted_keys = read_monitor_state(state_path)
                 pending_slots = []
@@ -283,12 +322,22 @@ def monitor(config='config0.ini'):
                     print("本轮未发现新的可提醒空位")
 
                 time.sleep(monitor_conf['interval_seconds'])
-        except KeyboardInterrupt:
-            print("监测已停止")
-            break
-        except Exception as exc:
-            print(f"监测异常，稍后重试：{exc}")
-            time.sleep(monitor_conf['interval_seconds'])
-        finally:
-            if driver is not None:
-                driver.quit()
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                print(f"本轮监测异常，保留当前浏览器并稍后重试：{exc}")
+                time.sleep(monitor_conf['interval_seconds'])
+                try:
+                    _ = driver.current_url
+                except Exception:
+                    print("浏览器会话已失效，准备重建浏览器")
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+                    driver = None
+    except KeyboardInterrupt:
+        print("监测已停止")
+    finally:
+        if driver is not None:
+            driver.quit()
