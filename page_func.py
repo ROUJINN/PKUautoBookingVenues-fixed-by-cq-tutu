@@ -12,6 +12,12 @@ import base64
 warnings.filterwarnings('ignore')
 
 
+VENUE_URL_MAP = {
+    "羽毛球场": "https://epe.pku.edu.cn/venue/venue-reservation/60",
+    "羽毛球馆": "https://epe.pku.edu.cn/venue/venue-reservation/86",
+}
+
+
 def login(driver, user_name, password, retry=0):
     if retry == 3:
         return '门户登录失败\n'
@@ -56,6 +62,17 @@ def go_to_venue(driver, venue, retry=0):
     log_str = "进入预约 %s 界面\n" % venue
 
     try:
+        venue_url = VENUE_URL_MAP.get(venue)
+        if venue_url:
+            driver.get(venue_url)
+            WebDriverWait(driver, 20).until_not(
+                EC.visibility_of_element_located((By.CLASS_NAME, "loading.ivu-spin.ivu-spin-large.ivu-spin-fix")))
+            WebDriverWait(driver, 20).until(
+                EC.visibility_of_element_located((By.XPATH, '//*[@id="scrollTable"]')))
+            status = True
+            log_str += "通过直链进入预约 %s 界面成功\n" % venue
+            return status, log_str
+
         butt_all = driver.find_element(By.ID, 'all')
         driver.execute_script('arguments[0].click();', butt_all)
         WebDriverWait(driver, 10).until_not(
@@ -83,8 +100,8 @@ def go_to_venue(driver, venue, retry=0):
                             f"//*[contains(text(), '{venue}')]").click()
         status = True
         log_str += "进入预约 %s 界面成功\n" % venue
-    except:
-        print("retrying")
+    except Exception as exc:
+        print(f"retrying: {exc}")
         status, log_str = go_to_venue(driver, venue, retry + 1)
     return status, log_str
 

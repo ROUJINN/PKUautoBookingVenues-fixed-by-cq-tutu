@@ -5,18 +5,22 @@ from urllib import request
 import json
 
 
-def wechat_notification(user_name, venue, venue_num, start_time, end_time, sckey):
+def server_chan_notification(title, desp, sckey):
     with request.urlopen(
-            quote('https://sctapi.ftqq.com/' + sckey + '.send?title=成功预约&desp=学号：' +
-                  str(user_name) + ' 成功预约：' + str(venue) + " 场地编号："+str(venue_num) +
-                  " 开始时间："+str(start_time)+" 结束时间："+str(end_time),
+            quote(f'https://sctapi.ftqq.com/{sckey}.send?title={title}&desp={desp}',
                   safe='/:?=&')) as response:
         response = json.loads(response.read().decode('utf-8'))
         if response['code'] == 0 and response['data']['error'] == 'SUCCESS':
             print('微信通知成功')
         else:
-            print(str(response['errno']) + ' error: ' + response['errmsg'])
+            raise RuntimeError(f"{response.get('errno')} error: {response.get('errmsg')}")
     return "微信通知成功\n"
+
+
+def wechat_notification(user_name, venue, venue_num, start_time, end_time, sckey):
+    desp = ('学号：' + str(user_name) + ' 成功预约：' + str(venue) + " 场地编号：" + str(venue_num) +
+            " 开始时间：" + str(start_time) + " 结束时间：" + str(end_time))
+    return server_chan_notification('成功预约', desp, sckey)
 
 
 if __name__ == '__main__':
