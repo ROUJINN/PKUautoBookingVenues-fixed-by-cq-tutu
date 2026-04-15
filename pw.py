@@ -1,6 +1,7 @@
 import datetime
 import time
 from playwright.sync_api import Playwright, sync_playwright
+from captcha_solver import solve_click_captcha
 
 
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
@@ -62,6 +63,10 @@ def run(playwright: Playwright) -> None:
     page.locator("tr:nth-child(7) > td:nth-child(5) > .reserveBlock > div > .two-tows-overflow-ellipsis").click()
     page.get_by_role("checkbox", name="已阅读并同意").check()
     page.get_by_text("提交", exact=True).click()
+    try:
+        solve_click_captcha(page)
+    except Exception as exc:
+        print(f"ddddocr 自动识别失败: {exc}")
     page.pause()
 
     # ---------------------

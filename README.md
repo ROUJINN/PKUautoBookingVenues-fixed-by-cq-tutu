@@ -1,11 +1,20 @@
-参考 
-https://www.chenquan-tutu.top/%E9%A1%B9%E7%9B%AE/PKU%20AutoBookingVenues%20-fixed%20by%20cq-tutu/
+当前主入口是 `pw.py`，使用 Playwright 抢场地，验证码使用本地 `ddddocr` 自动点选。
 
-环境配置
+安装依赖：
 
-uv init
+```bash
+pip install -r requirements.txt
+playwright install chromium
+```
 
-目前感觉下来：
-1. 由于不是抓接口，底层还是selenium，所以该卡还是卡
-2. 验证码现已改为本地 `ddddocr` 识别，不再依赖超级鹰充值
-3. 如果本地 `ddddocr` 依赖未装好，程序会自动切回手动验证码模式
+运行：
+
+```bash
+python pw.py
+```
+
+说明：
+1. 日期默认按“大后天”计算
+2. 如果大后天日期还没放出，会在 11:59:45 开始刷新页面，直到该日期出现后立刻继续
+3. 提交后会尝试用 `ddddocr` 自动处理点选验证码
+4. 旧的 Selenium 版本脚本已归档到 `legacy_selenium/`
