@@ -68,7 +68,7 @@ def wait_for_target_date(page, target_text: str) -> None:
             return
         if attempt % 10 == 0:
             print(f"已刷新 {attempt} 次，仍未找到目标日期: {target_text}")
-        time.sleep(0.3)
+        time.sleep(1)
 
 
 def run(playwright: Playwright) -> None:
