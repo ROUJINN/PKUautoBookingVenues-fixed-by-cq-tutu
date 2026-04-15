@@ -24,20 +24,51 @@ def wait_until_refresh_time() -> None:
     time.sleep(wait_seconds)
 
 
+def wait_for_page_ready(page) -> None:
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=3_000)
+    except Exception:
+        pass
+
+    loading_mask = page.locator(".loading.ivu-spin.ivu-spin-large.ivu-spin-fix")
+    try:
+        loading_mask.wait_for(state="hidden", timeout=3_000)
+    except Exception:
+        pass
+
+    # 给日期栏一个很短的渲染时间，避免刚 reload 完就立即判断。
+    page.wait_for_timeout(200)
+
+
+def find_target_date(page, target_text: str):
+    locator = page.get_by_text(target_text, exact=False)
+    return locator.first if locator.count() > 0 else None
+
+
 def wait_for_target_date(page, target_text: str) -> None:
-    target_locator = page.get_by_text(target_text, exact=True)
-    if target_locator.count() > 0:
-        target_locator.first.click()
+    wait_for_page_ready(page)
+
+    target_locator = find_target_date(page, target_text)
+    if target_locator is not None:
+        print(f"目标日期已存在，直接点击: {target_text}")
+        target_locator.click()
         return
 
     wait_until_refresh_time()
     print(f"开始刷新，等待日期出现: {target_text}")
+    attempt = 0
     while True:
+        attempt += 1
         page.reload(wait_until="domcontentloaded")
-        if target_locator.count() > 0:
-            print(f"目标日期已出现: {target_text}")
-            target_locator.first.click()
+        wait_for_page_ready(page)
+        target_locator = find_target_date(page, target_text)
+        if target_locator is not None:
+            print(f"第 {attempt} 次刷新后找到目标日期: {target_text}")
+            target_locator.click()
             return
+        if attempt % 10 == 0:
+            print(f"已刷新 {attempt} 次，仍未找到目标日期: {target_text}")
+        time.sleep(0.3)
 
 
 def run(playwright: Playwright) -> None:
