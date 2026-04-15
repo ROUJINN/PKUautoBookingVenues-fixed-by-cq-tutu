@@ -15,7 +15,7 @@ def build_target_date_text(days_ahead: int = 3) -> str:
 
 def wait_until_refresh_time() -> None:
     now = datetime.datetime.now()
-    refresh_start = now.replace(hour=11, minute=59, second=45, microsecond=0)
+    refresh_start = now.replace(hour=11, minute=59, second=55, microsecond=0)
     if now >= refresh_start:
         return
 
