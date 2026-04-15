@@ -9,12 +9,15 @@ from captcha_solver import solve_click_captcha
 
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 TARGET_DAYS_AHEAD = 3
-REFRESH_START_HOUR = 16
-REFRESH_START_MINUTE = 51
-REFRESH_START_SECOND = 55
+REFRESH_START_HOUR = 17
+REFRESH_START_MINUTE = 7
+REFRESH_START_SECOND = 50
 TARGET_VENUE_NO = 5
 # TARGET_TIME_RANGE = "20:00-21:00"
 TARGET_TIME_RANGE = "06:50-07:50"
+CAPTCHA_BEFORE_CLICK_DELAY = 0.5
+CAPTCHA_CLICK_INTERVAL = 0.5
+CAPTCHA_AFTER_CLICK_DELAY = 0
 DEBUG_DUMP_TABLE = os.getenv("DEBUG_DUMP_TABLE") == "1"
 DEBUG_DIR = Path("debug_artifacts")
 
@@ -144,7 +147,12 @@ def run(playwright: Playwright) -> None:
     page.get_by_role("checkbox", name="已阅读并同意").check()
     page.get_by_text("提交", exact=True).click()
     try:
-        solve_click_captcha(page)
+        solve_click_captcha(
+            page,
+            before_click_delay=CAPTCHA_BEFORE_CLICK_DELAY,
+            click_interval=CAPTCHA_CLICK_INTERVAL,
+            after_click_delay=CAPTCHA_AFTER_CLICK_DELAY,
+        )
     except Exception as exc:
         print(f"ddddocr 自动识别失败: {exc}")
     page.pause()

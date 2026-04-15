@@ -96,13 +96,19 @@ def match_click_order(order_words, candidates):
     return matched
 
 
-def solve_click_captcha(page) -> None:
+def solve_click_captcha(
+    page,
+    before_click_delay: float = 1.0,
+    click_interval: float = 0.8,
+    after_click_delay: float = 1.0,
+) -> None:
     print("开始处理验证码")
     captcha_image = page.locator(f"xpath={CAPTCHA_IMAGE_XPATH}")
     order_text = page.locator(f"xpath={CAPTCHA_ORDER_XPATH}")
 
     captcha_image.wait_for(state="visible", timeout=10000)
     order_text.wait_for(state="visible", timeout=10000)
+    page.wait_for_timeout(int(before_click_delay * 1000))
 
     order_words = parse_order_words(order_text.inner_text())
     image_bytes = captcha_image.screenshot()
@@ -117,6 +123,7 @@ def solve_click_captcha(page) -> None:
         click_y = box["y"] + target["center"][1]
         print(f"点击验证码文字: {target['text']} @ ({click_x:.1f}, {click_y:.1f})")
         page.mouse.click(click_x, click_y)
-        time.sleep(0.2)
+        time.sleep(click_interval)
 
+    page.wait_for_timeout(int(after_click_delay * 1000))
     print("验证码点击完成")
