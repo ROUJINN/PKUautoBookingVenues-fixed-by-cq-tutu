@@ -7,7 +7,7 @@ PKU智慧场馆自动预约工具
 
 1. selenium库更新了，之前的语法已经无法跑通
 2. 智慧场馆网站也新写了，许多爬虫代码也随之修改
-3. 提交预约时的验证方式改成了文字点击，于是使用了超级鹰的api来识别
+3. 提交预约时的验证方式改成了文字点击，目前使用本地 `ddddocr` 来识别
 
 
 
@@ -24,7 +24,7 @@ PKU智慧场馆自动预约工具
 - 本项目需要提前安装firefox浏览器以及驱动，请把firefox驱动复制到该文件夹下
 - 支持基于[Server酱](https://sct.ftqq.com/)的备案结果微信推送功能，体验更佳
 - 采用定时任务可实现定期（如每周）免打扰预约，请设置在三天前的11:55-12:00之间
-- 第三方依赖包几乎只有 `selenium` 一个
+- 第三方依赖除 `selenium` 外，还需要 `onnxruntime`、`Pillow`、`opencv-python` 以支持本地 `ddddocr`
 - 由于我只测试过羽毛球场的预约，其他场馆只是理论上可行，如果出现任何问题，可以提issue
 - 目前仅支持一个小时的预约，后续可能会增加两个小时预约的功能
 - `config`参数填写`config.ini`文件的名称，类型为字符串
@@ -52,13 +52,15 @@ PKU智慧场馆自动预约工具
 pip install selenium
 ```
 
-### API
+### 验证码识别
 
-#### 超级鹰
+项目默认使用仓库内置的 `ddddocr` 源码做本地验证码识别，不再依赖超级鹰账号。
 
-在https://www.chaojiying.com/注册，并充钱（最少充10块钱，可识别验证码625次）
+首次运行前请安装依赖：
 
-然后，进入用户中心，在左侧菜单栏中点击“软件ID”，生成一个软件ID，并填入config文件中的soft_id
+```python
+pip install -r requirements.txt
+```
 
 
 
@@ -69,7 +71,7 @@ pip install selenium
 
 2. 用文本编辑器（建议代码编辑器）打开 `config0.ini` 文件
 
-3. 配置 `[login]` 、`[type]` 、`[time]`、`[wechat_notice]` 、`[chaojiying`]这几个 Section 下的变量，在 `config0.ini.sample` 文件内有详细注释
+3. 配置 `[login]` 、`[type]` 、`[time]`、`[wechat]`、`[captcha]` 这几个 Section 下的变量
 
 
 ## 定时运行
@@ -81,6 +83,5 @@ pip install selenium
 ### mac OS
 
 进入项目根目录，以命令 `./macAutoRun.sh` 执行 `macAutoRun.sh` 脚本即可，可设定或取消定时运行
-
 
 

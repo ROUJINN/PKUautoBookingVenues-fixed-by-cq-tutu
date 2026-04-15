@@ -46,11 +46,9 @@ def load_config(config):
     end_time = conf['time']['end_time']
     wechat_notice = conf.getboolean('wechat', 'wechat_notice')
     sckey = conf['wechat']['SCKEY']
-    username = conf['chaojiying']['username']
-    pass_word = conf['chaojiying']['password']
-    soft_id = conf['chaojiying']['soft_id']
+    captcha_auto_verify = conf.getboolean('captcha', 'auto_verify', fallback=True)
 
-    return (user_name, password, venue, venue_num, start_time, end_time, wechat_notice, sckey, username, pass_word, soft_id)
+    return (user_name, password, venue, venue_num, start_time, end_time, wechat_notice, sckey, captcha_auto_verify)
 
 
 def log_status(config, start_time, log_str):
@@ -66,11 +64,14 @@ def log_status(config, start_time, log_str):
 
 
 def page(config, browser="chrome"):
-    user_name, password, venue, venue_num, start_time, end_time, wechat_notice, sckey, username, pass_word, soft_id = load_config(config)
+    user_name, password, venue, venue_num, start_time, end_time, wechat_notice, sckey, captcha_auto_verify = load_config(config)
 
     log_str = ""
     status = True
-    manual_verify = not all([username.strip(), pass_word.strip(), soft_id.strip()])
+    manual_verify = (not captcha_auto_verify) or (DDDDOCR_IMPORT_ERROR is not None)
+    if captcha_auto_verify and DDDDOCR_IMPORT_ERROR is not None:
+        print(f"ddddocr 依赖不可用，切换为手动验证码模式: {DDDDOCR_IMPORT_ERROR}")
+        log_str += f"ddddocr 依赖不可用，切换为手动验证码模式: {DDDDOCR_IMPORT_ERROR}\n"
     start_time_list_new, end_time_list_new, delta_day_list, log_exceeds = judge_exceeds_days_limit(start_time, end_time)
     log_str += log_exceeds
     if len(start_time_list_new) == 0:
@@ -142,7 +143,7 @@ def page(config, browser="chrome"):
             status = False
     if status:
         try:
-            log_str += verify(driver, username, pass_word, soft_id)
+            log_str += verify(driver, captcha_auto_verify)
         except:
             log_str += "安全验证失败\n"
             print("安全验证失败\n")

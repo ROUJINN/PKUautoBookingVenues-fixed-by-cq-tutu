@@ -5,11 +5,44 @@ from urllib.parse import quote
 import time
 import datetime
 import warnings
+import io
+import os
+import re
+import traceback
 from selenium.webdriver.common.action_chains import ActionChains
-from chaojiying import *
 import base64
+from PIL import Image
+
+try:
+    from ddddocr.ddddocr import DdddOcr
+    DDDDOCR_IMPORT_ERROR = None
+except Exception as exc:
+    DdddOcr = None
+    DDDDOCR_IMPORT_ERROR = exc
 
 warnings.filterwarnings('ignore')
+
+_TEXT_DETECTOR = None
+_TEXT_CLASSIFIER = None
+
+
+def dump_debug_artifacts(driver, prefix):
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    screenshot_path = f"{prefix}_{timestamp}.png"
+    html_path = f"{prefix}_{timestamp}.html"
+
+    try:
+        driver.save_screenshot(screenshot_path)
+        print(f"已保存截图: {os.path.abspath(screenshot_path)}")
+    except Exception as exc:
+        print(f"保存截图失败: {exc}")
+
+    try:
+        with open(html_path, "w", encoding="utf-8") as fw:
+            fw.write(driver.page_source)
+        print(f"已保存页面源码: {os.path.abspath(html_path)}")
+    except Exception as exc:
+        print(f"保存页面源码失败: {exc}")
 
 
 def login(driver, user_name, password, retry=0):
@@ -83,7 +116,12 @@ def go_to_venue(driver, venue, retry=0):
                             f"//*[contains(text(), '{venue}')]").click()
         status = True
         log_str += "进入预约 %s 界面成功\n" % venue
-    except:
+    except Exception as exc:
+        print(f"go_to_venue 第 {retry + 1} 次失败: {type(exc).__name__}: {exc}")
+        print(f"当前 URL: {driver.current_url}")
+        print(f"当前标题: {driver.title}")
+        print(traceback.format_exc())
+        dump_debug_artifacts(driver, f"debug_go_to_venue_retry{retry + 1}")
         print("retrying")
         status, log_str = go_to_venue(driver, venue, retry + 1)
     return status, log_str
@@ -322,14 +360,96 @@ def click_submit_order(driver):
     return log_str
 
 
-def verify(driver, username, pass_word, soft_id):
+def get_ocr_engines():
+    global _TEXT_DETECTOR, _TEXT_CLASSIFIER
+
+    if DDDDOCR_IMPORT_ERROR is not None:
+        raise RuntimeError(f"ddddocr 不可用: {DDDDOCR_IMPORT_ERROR}")
+
+    if _TEXT_DETECTOR is None:
+        _TEXT_DETECTOR = DdddOcr(det=True, ocr=False, show_ad=False)
+    if _TEXT_CLASSIFIER is None:
+        _TEXT_CLASSIFIER = DdddOcr(det=False, ocr=True, beta=True, show_ad=False)
+    return _TEXT_DETECTOR, _TEXT_CLASSIFIER
+
+
+def crop_box(image, box, padding=4):
+    x_min, y_min, x_max, y_max = box
+    left = max(0, x_min - padding)
+    upper = max(0, y_min - padding)
+    right = min(image.width, x_max + padding)
+    lower = min(image.height, y_max + padding)
+    return image.crop((left, upper, right, lower))
+
+
+def parse_order_words(order_str):
+    quoted_words = re.findall(r'[“"]([^”"]+)[”"]', order_str)
+    if quoted_words:
+        return [word.strip() for word in re.split(r'[,，\s]+', quoted_words[-1]) if word.strip()]
+
+    colon_split = re.split(r'[:：]', order_str)
+    if len(colon_split) > 1:
+        return [word.strip() for word in re.split(r'[,，\s]+', colon_split[-1]) if word.strip()]
+
+    return [word for word in re.findall(r'[\u4e00-\u9fffA-Za-z0-9]', order_str)[-3:]]
+
+
+def recognize_click_targets(image_content):
+    detector, classifier = get_ocr_engines()
+    image = Image.open(io.BytesIO(image_content)).convert("RGB")
+    boxes = detector.detection(image_content)
+    candidates = []
+
+    for box in boxes:
+        char_image = crop_box(image, box)
+        buffer = io.BytesIO()
+        char_image.save(buffer, format='PNG')
+        text = classifier.classification(buffer.getvalue(), png_fix=True).strip()
+        if text:
+            candidates.append({
+                "text": text,
+                "box": box,
+                "center": ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
+            })
+
+    return candidates
+
+
+def match_click_order(order_words, candidates):
+    matched = []
+    used_indexes = set()
+
+    for order_word in order_words:
+        candidate_index = None
+        for index, candidate in enumerate(candidates):
+            if index in used_indexes:
+                continue
+            candidate_text = candidate["text"]
+            if candidate_text == order_word or order_word in candidate_text or candidate_text in order_word:
+                candidate_index = index
+                break
+
+        if candidate_index is None:
+            raise RuntimeError(f"未识别到目标文字: {order_word}")
+
+        used_indexes.add(candidate_index)
+        matched.append(candidates[candidate_index])
+
+    return matched
+
+
+def manual_verify(driver, message):
+    driver.switch_to.window(driver.window_handles[-1])
+    print(message)
+    input("完成安全验证后按回车继续：")
+    return "手动安全验证完成\n"
+
+
+def verify(driver, captcha_auto_verify):
     print("进入安全验证")
     log_str = "进入安全验证\n"
-    if not all([username.strip(), pass_word.strip(), soft_id.strip()]):
-        driver.switch_to.window(driver.window_handles[-1])
-        print("未配置超级鹰账号，切换为手动验证码模式。请在浏览器里完成安全验证，然后回到终端按回车继续。")
-        input("完成安全验证后按回车继续：")
-        log_str += "手动安全验证完成\n"
+    if not captcha_auto_verify:
+        log_str += manual_verify(driver, "已关闭自动验证码识别。请在浏览器里完成安全验证，然后回到终端按回车继续。")
         return log_str
 
     # 创建ActionChains对象
@@ -340,29 +460,29 @@ def verify(driver, username, pass_word, soft_id):
                                 "/html/body/div[1]/div/div/div[3]/div[2]/div/div[1]/div[2]/div[4]/div[3]/div/div[2]/div/div[2]/span")
     image_uri = target_element.get_attribute("src")
     order_str = order.text
-    order_words = order_str[-6:-1].split(",")
-    # print(order_words)
+    order_words = parse_order_words(order_str)
     data_start = image_uri.find(",") + 1
     image_base64 = image_uri[data_start:]
-    # print(image_base64)
-    # image_content = response.content
     image_content = base64.b64decode(image_base64)
 
-    chaojiying = Chaojiying_Client(username, pass_word, soft_id)
-    ans_str = chaojiying.PostPic(image_content, 9501)
-    # print(ans_str)
-    words = ans_str['pic_str'].split('|')
-    # print(words)
-    words_loc = []
-    for i in range(len(words)):
-        words_loc.append(words[i].split(','))
-    # print(words_loc)
-    for i in range(3):
-        for j in range(len(words_loc)):
-            if order_words[i] == words_loc[j][0]:
-                # print(words_loc[j][0], int(words_loc[j][1]), int(words_loc[j][2]))
-                actions.move_to_element_with_offset(target_element, int(words_loc[j][1]) - 160,
-                                                    int(words_loc[j][2]) - 72).click().perform()
+    try:
+        candidates = recognize_click_targets(image_content)
+        matched_targets = match_click_order(order_words, candidates)
+    except Exception as exc:
+        print(f"ddddocr 自动识别失败: {exc}")
+        log_str += manual_verify(driver, "ddddocr 自动识别失败，请在浏览器里完成安全验证，然后回到终端按回车继续。")
+        return log_str
+
+    element_width = target_element.size["width"]
+    element_height = target_element.size["height"]
+    for target in matched_targets:
+        click_x, click_y = target["center"]
+        actions.move_to_element_with_offset(
+            target_element,
+            click_x - element_width / 2,
+            click_y - element_height / 2,
+        ).click().perform()
+        time.sleep(0.2)
     print("安全验证成功")
     log_str += "安全验证成功\n"
     return log_str
