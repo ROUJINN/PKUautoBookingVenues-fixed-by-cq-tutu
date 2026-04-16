@@ -9,12 +9,12 @@ from captcha_solver import solve_click_captcha
 
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 TARGET_DAYS_AHEAD = 3
-REFRESH_START_HOUR = 17
-REFRESH_START_MINUTE = 7
-REFRESH_START_SECOND = 50
+REFRESH_START_HOUR = 11
+REFRESH_START_MINUTE = 59
+REFRESH_START_SECOND = 57
 TARGET_VENUE_NO = 5
-# TARGET_TIME_RANGE = "20:00-21:00"
-TARGET_TIME_RANGE = "06:50-07:50"
+TARGET_TIME_RANGE = "20:00-21:00"
+# TARGET_TIME_RANGE = "06:50-07:50"
 # 这组参数是可以的，点太快会报非法校验
 CAPTCHA_BEFORE_CLICK_DELAY = 0.5
 CAPTCHA_CLICK_INTERVAL = 0.5 
@@ -76,20 +76,15 @@ def wait_for_target_date(page, target_text: str) -> None:
         return
 
     wait_until_refresh_time()
-    print(f"开始刷新，等待日期出现: {target_text}")
-    attempt = 0
-    while True:
-        attempt += 1
-        page.reload(wait_until="domcontentloaded")
-        wait_for_page_ready(page)
-        target_locator = find_target_date(page, target_text)
-        if target_locator is not None:
-            print(f"第 {attempt} 次刷新后找到目标日期: {target_text}")
-            target_locator.click()
-            return
-        if attempt % 10 == 0:
-            print(f"已刷新 {attempt} 次，仍未找到目标日期: {target_text}")
-        time.sleep(1)
+    print(f"到达刷新时间，执行一次刷新并等待日期出现: {target_text}")
+    page.reload(wait_until="domcontentloaded")
+    wait_for_page_ready(page)
+
+    target_locator = page.get_by_text(target_text, exact=False).first
+    print(f"等待页面内出现目标日期: {target_text}")
+    target_locator.wait_for(state="visible", timeout=0)
+    print(f"目标日期已出现，立即点击: {target_text}")
+    target_locator.click()
 
 
 def dump_booking_table_debug(page) -> None:
