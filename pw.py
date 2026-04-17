@@ -9,9 +9,9 @@ from captcha_solver import solve_click_captcha
 
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 TARGET_DAYS_AHEAD = 3
-REFRESH_START_HOUR = 11
-REFRESH_START_MINUTE = 59
-REFRESH_START_SECOND = 57
+REFRESH_START_HOUR = 12
+REFRESH_START_MINUTE = 00
+REFRESH_START_SECOND = 00
 TARGET_VENUE_NO = 5
 TARGET_TIME_RANGE = "20:00-21:00"
 # TARGET_TIME_RANGE = "06:50-07:50"
@@ -120,42 +120,49 @@ def run(playwright: Playwright) -> None:
     browser = playwright.chromium.launch(channel="msedge", headless=False)
     context = browser.new_context()
     page = context.new_page()
-    page.goto("https://epe.pku.edu.cn/venue/venue-reservation/86")
-    page.get_by_role("button", name="确定").click()
-    page.get_by_role("link", name="统一身份认证登录（IAAA）").click()
-    page.get_by_role("textbox", name="User ID / PKU Email / Cell").fill("2200015825")
-    page.get_by_role("textbox", name="User ID / PKU Email / Cell").press("Tab")
-    page.get_by_role("textbox", name="Password").fill("Roujin520")
-    page.get_by_role("button", name="Login", exact=True).click()
-    wait_for_target_date(page, target_date_text)
-    if DEBUG_DUMP_TABLE:
-        dump_booking_table_debug(page)
-        page.pause()
-        return
+    should_pause = False
 
-    selected_venue_no = click_venue_by_semantics(
-        page,
-        TARGET_VENUE_NO,
-        TARGET_TIME_RANGE,
-        wait_for_page_ready,
-    )
-    print(f"已选择场地: {selected_venue_no}号场 {normalize_time_range(TARGET_TIME_RANGE)}")
-    page.get_by_role("checkbox", name="已阅读并同意").check()
-    page.get_by_text("提交", exact=True).click()
     try:
-        solve_click_captcha(
-            page,
-            before_click_delay=CAPTCHA_BEFORE_CLICK_DELAY,
-            click_interval=CAPTCHA_CLICK_INTERVAL,
-            after_click_delay=CAPTCHA_AFTER_CLICK_DELAY,
-        )
-    except Exception as exc:
-        print(f"ddddocr 自动识别失败: {exc}")
-    page.pause()
+        page.goto("https://epe.pku.edu.cn/venue/venue-reservation/86")
+        page.get_by_role("button", name="确定").click()
+        page.get_by_role("link", name="统一身份认证登录（IAAA）").click()
+        page.get_by_role("textbox", name="User ID / PKU Email / Cell").fill("2200015825")
+        page.get_by_role("textbox", name="User ID / PKU Email / Cell").press("Tab")
+        page.get_by_role("textbox", name="Password").fill("Roujin520")
+        page.get_by_role("button", name="Login", exact=True).click()
+        wait_for_target_date(page, target_date_text)
+        if DEBUG_DUMP_TABLE:
+            dump_booking_table_debug(page)
+            should_pause = True
+            return
 
-    # ---------------------
-    context.close()
-    browser.close()
+        selected_venue_no = click_venue_by_semantics(
+            page,
+            TARGET_VENUE_NO,
+            TARGET_TIME_RANGE,
+            wait_for_page_ready,
+        )
+        print(f"已选择场地: {selected_venue_no}号场 {normalize_time_range(TARGET_TIME_RANGE)}")
+        page.get_by_role("checkbox", name="已阅读并同意").check()
+        page.get_by_text("提交", exact=True).click()
+        try:
+            solve_click_captcha(
+                page,
+                before_click_delay=CAPTCHA_BEFORE_CLICK_DELAY,
+                click_interval=CAPTCHA_CLICK_INTERVAL,
+                after_click_delay=CAPTCHA_AFTER_CLICK_DELAY,
+            )
+        except Exception as exc:
+            print(f"ddddocr 自动识别失败: {exc}")
+        page.pause()
+    except Exception as exc:
+        should_pause = True
+        print(f"运行出错，已暂停浏览器供手动接管: {exc}")
+    finally:
+        if should_pause:
+            page.pause()
+        context.close()
+        browser.close()
 
 
 with sync_playwright() as playwright:
