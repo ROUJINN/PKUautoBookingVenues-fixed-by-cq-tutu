@@ -96,9 +96,8 @@ def click_reservation_cell(cell) -> None:
     clickable.click()
 
 
-def click_venue_by_semantics(page, venue_no: int, time_range: str, wait_for_page_ready) -> int:
-    wait_for_table_rendered(page, wait_for_page_ready)
-    time_column = find_time_column(page, time_range, wait_for_page_ready)
+def _try_book_time_column(page, venue_no: int, time_range: str, time_column: int):
+    """尝试在指定时间列预订目标场地，返回 (venue_no, time_range) 或 None 表示该时间列无可用场地。"""
     rows = page.locator("#scrollTable tbody tr")
     fallback_cells = []
     found_target_venue = False
@@ -120,7 +119,7 @@ def click_venue_by_semantics(page, venue_no: int, time_range: str, wait_for_page
             if is_available:
                 print(f"点击目标场地: {venue_no}号场 {normalize_time_range(time_range)}")
                 click_reservation_cell(cell)
-                return venue_no
+                return venue_no, time_range
 
         if is_available:
             fallback_cells.append((current_venue_no, cell))
@@ -132,9 +131,37 @@ def click_venue_by_semantics(page, venue_no: int, time_range: str, wait_for_page
             f"改点同时间的 {fallback_venue_no}号场"
         )
         click_reservation_cell(fallback_cell)
-        return fallback_venue_no
+        return fallback_venue_no, time_range
 
     if not found_target_venue:
         raise RuntimeError("当前表格没有找到场地行，可能还未到开放时间或页面未加载出可预约场地")
 
-    raise RuntimeError(f"{normalize_time_range(time_range)} 没有可订场地")
+    return None
+
+
+def click_venue_by_semantics(page, venue_no: int, time_ranges: list[str], wait_for_page_ready) -> tuple[int, str]:
+    """按优先级依次尝试多个时间段，返回 (场地号, 实际选定的时间段)。
+
+    time_ranges 为优先顺序列表，越靠前优先级越高。
+    """
+    wait_for_table_rendered(page, wait_for_page_ready)
+    unavailable_ranges = []
+
+    for time_range in time_ranges:
+        try:
+            time_column = find_time_column(page, time_range, wait_for_page_ready)
+        except RuntimeError:
+            print(f"时间段 {normalize_time_range(time_range)} 在表格中不存在，跳过")
+            continue
+
+        result = _try_book_time_column(page, venue_no, time_range, time_column)
+        if result is not None:
+            return result
+
+        unavailable_ranges.append(normalize_time_range(time_range))
+        print(f"{normalize_time_range(time_range)} 没有可订场地，尝试下一个优先时间段")
+
+    if unavailable_ranges:
+        raise RuntimeError(f"以下时间段均无可订场地: {', '.join(unavailable_ranges)}")
+
+    raise RuntimeError("所有目标时间段在表格中均不存在")

@@ -13,8 +13,8 @@ REFRESH_START_HOUR = 12
 REFRESH_START_MINUTE = 00
 REFRESH_START_SECOND = 00
 TARGET_VENUE_NO = 5
-TARGET_TIME_RANGE = "20:00-21:00"
-# TARGET_TIME_RANGE = "06:50-07:50"
+# TARGET_TIME_RANGE 按优先顺序排列，前面优先尝试；若某时间段无可用场地则自动尝试下一个
+TARGET_TIME_RANGE = ["20:00-21:00","16:00-17:00","06:50-07:50"]
 # 这组参数是可以的，点太快会报非法校验
 CAPTCHA_BEFORE_CLICK_DELAY = 0
 CAPTCHA_CLICK_INTERVAL = 0.3  # 这里 0.2就不行
@@ -136,13 +136,13 @@ def run(playwright: Playwright) -> None:
             should_pause = True
             return
 
-        selected_venue_no = click_venue_by_semantics(
+        selected_venue_no, selected_time = click_venue_by_semantics(
             page,
             TARGET_VENUE_NO,
             TARGET_TIME_RANGE,
             wait_for_page_ready,
         )
-        print(f"已选择场地: {selected_venue_no}号场 {normalize_time_range(TARGET_TIME_RANGE)}")
+        print(f"已选择场地: {selected_venue_no}号场 {normalize_time_range(selected_time)}")
         page.get_by_role("checkbox", name="已阅读并同意").check()
         page.get_by_text("提交", exact=True).click()
         try:
