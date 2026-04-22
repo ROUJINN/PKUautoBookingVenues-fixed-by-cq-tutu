@@ -13,6 +13,14 @@ def normalize_time_range(text: str) -> str:
     return f"{int(start_hour):02d}:{start_minute}-{int(end_hour):02d}:{end_minute}"
 
 
+def _parse_start_minutes(time_range: str) -> int | None:
+    """从标准化时间段 'HH:MM-HH:MM' 提取起始时间的分钟数，用于比较先后。"""
+    match = re.match(r"(\d{2}):(\d{2})-\d{2}:\d{2}$", time_range)
+    if not match:
+        return None
+    return int(match.group(1)) * 60 + int(match.group(2))
+
+
 def extract_venue_no(text: str) -> int | None:
     match = re.search(r"(\d+)\s*(?:号|#)?\s*(?:场|片|空间)?", text)
     return int(match.group(1)) if match else None
@@ -53,8 +61,45 @@ def click_next_time_page(page, wait_for_page_ready) -> bool:
     return False
 
 
+def _decide_page_direction(time_columns: dict[str, int], target_start: int | None) -> int:
+    """根据当前可见时间与目标时间比较，决定翻页方向。
+
+    返回值: 1 向后翻页, -1 向前翻页, 0 无法判断。
+    """
+    if target_start is None:
+        return 0
+
+    visible_starts = []
+    for tr in time_columns:
+        m = _parse_start_minutes(tr)
+        if m is not None:
+            visible_starts.append(m)
+
+    if not visible_starts:
+        return 0
+
+    min_visible = min(visible_starts)
+    max_visible = max(visible_starts)
+
+    if target_start < min_visible:
+        return -1  # 目标在前方，向前翻页
+    if target_start > max_visible:
+        return 1   # 目标在后方，向后翻页
+    return 0  # 目标在当前范围内但未精确匹配，默认向后
+
+
+def click_prev_time_page(page, wait_for_page_ready) -> bool:
+    button = page.locator("#scrollTable .ivu-table-cell > .ivu-icon").first
+    if button.count() == 0:
+        return False
+    button.click()
+    wait_for_table_rendered(page, wait_for_page_ready)
+    return True
+
+
 def find_time_column(page, target_time_range: str, wait_for_page_ready) -> int:
     target_time_range = normalize_time_range(target_time_range)
+    target_start = _parse_start_minutes(target_time_range)
     seen_headers = set()
 
     for _ in range(8):
@@ -68,9 +113,20 @@ def find_time_column(page, target_time_range: str, wait_for_page_ready) -> int:
             break
         seen_headers.add(header_signature)
 
-        print(f"当前可见时间: {', '.join(time_columns) or '无'}，继续翻页查找 {target_time_range}")
-        if not click_next_time_page(page, wait_for_page_ready):
-            break
+        # 根据目标时间与当前可见时间的比较决定翻页方向
+        direction = _decide_page_direction(time_columns, target_start)
+        if direction > 0:
+            print(f"当前可见时间: {', '.join(time_columns) or '无'}，目标 {target_time_range} 在后方，继续向后翻页")
+            if not click_next_time_page(page, wait_for_page_ready):
+                break
+        elif direction < 0:
+            print(f"当前可见时间: {', '.join(time_columns) or '无'}，目标 {target_time_range} 在前方，继续向前翻页")
+            if not click_prev_time_page(page, wait_for_page_ready):
+                break
+        else:
+            print(f"当前可见时间: {', '.join(time_columns) or '无'}，无法判断翻页方向，继续向后翻页")
+            if not click_next_time_page(page, wait_for_page_ready):
+                break
 
     raise RuntimeError(f"找不到目标时间段: {target_time_range}")
 

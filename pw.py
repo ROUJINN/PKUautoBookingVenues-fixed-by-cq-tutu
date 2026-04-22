@@ -8,7 +8,7 @@ from captcha_solver import solve_click_captcha
 
 
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-TARGET_DAYS_AHEAD = 3
+TARGET_DAYS_AHEAD = 1
 REFRESH_START_HOUR = 12
 REFRESH_START_MINUTE = 00
 REFRESH_START_SECOND = 00
@@ -21,7 +21,7 @@ CAPTCHA_CLICK_INTERVAL = 0.3  # 这里 0.2就不行
 CAPTCHA_AFTER_CLICK_DELAY = 0
 DEBUG_DUMP_TABLE = os.getenv("DEBUG_DUMP_TABLE") == "1"
 DEBUG_DIR = Path("debug_artifacts")
-
+# 
 
 def build_target_date_text(days_ahead: int = 3) -> str:
     target_date = datetime.date.today() + datetime.timedelta(days=days_ahead)
