@@ -1,6 +1,8 @@
 import io
 import re
 import time
+import datetime
+from pathlib import Path
 
 from PIL import Image
 
@@ -112,8 +114,14 @@ def solve_click_captcha(
 
     order_words = parse_order_words(order_text.inner_text())
     image_bytes = captcha_image.screenshot()
-    candidates = recognize_click_targets(image_bytes)
-    matched_targets = match_click_order(order_words, candidates)
+
+    try:
+        candidates = recognize_click_targets(image_bytes)
+        matched_targets = match_click_order(order_words, candidates)
+    except Exception as exc:
+        _save_captcha_for_debug(image_bytes, order_text.inner_text())
+        raise
+
     box = captcha_image.bounding_box()
     if box is None:
         raise RuntimeError("无法获取验证码图片坐标")
@@ -127,3 +135,15 @@ def solve_click_captcha(
 
     page.wait_for_timeout(int(after_click_delay * 1000))
     print("验证码点击完成")
+
+
+def _save_captcha_for_debug(image_bytes: bytes, order_text: str) -> None:
+    """验证码识别失败时，将图片和文字保存到 testpic/ 目录，方便后续调试。"""
+    debug_dir = Path("testpic")
+    debug_dir.mkdir(exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    image_path = debug_dir / f"{timestamp}.png"
+    text_path = debug_dir / f"{timestamp}.txt"
+    image_path.write_bytes(image_bytes)
+    text_path.write_text(order_text, encoding="utf-8")
+    print(f"验证码识别失败，已保存调试文件: {image_path}, {text_path}")
