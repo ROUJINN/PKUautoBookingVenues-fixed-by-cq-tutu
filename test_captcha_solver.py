@@ -41,7 +41,8 @@ def evaluate_case(image_path: Path, text_path: Path):
 def main():
     test_dir = Path("testpic")
     image_paths = sorted(test_dir.glob("*.png"))
-    results = []
+    total = 0
+    success_count = 0
 
     for image_path in image_paths:
         text_path = image_path.with_suffix(".txt")
@@ -49,9 +50,11 @@ def main():
             print(f"SKIP {image_path.name}: 缺少 {text_path.name}")
             continue
 
+        total += 1
         try:
             result = evaluate_case(image_path, text_path)
-            results.append(result)
+            if result["success"]:
+                success_count += 1
             print(f"[{'OK' if result['success'] else 'FAIL'}] {result['image']}")
             print(f"  prompt: {result['prompt']}")
             print(f"  target: {result['order_words']}")
@@ -63,9 +66,8 @@ def main():
         except Exception as exc:
             print(f"[ERROR] {image_path.name}: {type(exc).__name__}: {exc}")
 
-    if results:
-        success_count = sum(result["success"] for result in results)
-        print(f"\nSummary: {success_count}/{len(results)} success")
+    if total:
+        print(f"\nSummary: {success_count}/{total} success")
 
 
 if __name__ == "__main__":
