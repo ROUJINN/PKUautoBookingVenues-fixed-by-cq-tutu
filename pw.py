@@ -28,7 +28,7 @@ TARGET_VENUE_NO = 5
 # TARGET_TIME_RANGE 按优先顺序排列，前面优先尝试；若某时间段无可用场地则自动尝试下一个
 TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","19:00-20:00"] # work day
 # TARGET_TIME_RANGE = ["16:00-17:00","15:00-16:00","20:00-21:00","21:00-22:00","19:00-20:00"] # weekend
-TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","06:50-07:50"]  # debug
+# TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","06:50-07:50"]  # debug
 # 这组参数是可以的，点太快会报非法校验
 CAPTCHA_BEFORE_CLICK_DELAY = 0
 CAPTCHA_CLICK_INTERVAL = 0.35  # 这里 0.2就不行,0.3有时候非法校验
