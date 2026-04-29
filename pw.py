@@ -175,7 +175,9 @@ def run(playwright: Playwright) -> None:
                 if captcha_attempt < max_captcha_retries:
                     print("点击刷新按钮重试验证码")
                     old_order_text = order_text_locator.inner_text()
-                    page.locator(".iconfont.icon-refresh").click()
+                    # page.locator(".iconfont.icon-refresh").click()
+                    # 似乎下面这个才是正确的刷新按钮，前者有时候点击了没反应
+                    page.locator(".verify-refresh").click()
                     try:
                         _wait_for_captcha_refresh(page, old_order_text)
                     except Exception:
