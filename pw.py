@@ -1,3 +1,4 @@
+import concurrent.futures
 import datetime
 import os
 from pathlib import Path
@@ -11,7 +12,7 @@ TARGET_DAYS_AHEAD = 3
 REFRESH_START_HOUR = 12
 REFRESH_START_MINUTE = 00
 REFRESH_START_SECOND = 00
-TARGET_VENUE_NO = 4
+TARGET_VENUE_NO = [3, 4]  # int 或 list[int]，list 会并行抢多个场地
 # TARGET_TIME_RANGE 按优先顺序排列，前面优先尝试；若某时间段无可用场地则自动尝试下一个
 TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","19:00-20:00"] # work day
 # TARGET_TIME_RANGE = ["16:00-17:00","15:00-16:00","20:00-21:00","21:00-22:00","19:00-20:00"] # weekend
@@ -114,69 +115,76 @@ def dump_booking_table_debug(page) -> None:
     print(f"已保存表格文本: {text_path.resolve()}")
 
 
-def run(playwright: Playwright) -> None:
+def run_for_venue(venue_no: int) -> None:
+    """为单个场地启动一个独立的浏览器 session。"""
     target_date_text = build_target_date_text(days_ahead=TARGET_DAYS_AHEAD)
-    # target_date_text = 星期五04月17日
-    print(f"目标日期: {target_date_text}")
+    prefix = f"[场地 {venue_no}]"
+    print(f"{prefix} 目标日期: {target_date_text}")
 
-    browser = playwright.chromium.launch(channel="msedge", headless=False)
-    context = browser.new_context()
-    page = context.new_page()
-    should_pause = False
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(channel="msedge", headless=False)
+        context = browser.new_context()
+        page = context.new_page()
+        should_pause = False
 
-    try:
-        page.goto("https://epe.pku.edu.cn/venue/venue-reservation/86")
-        page.get_by_role("button", name="确定").click()
-        page.get_by_role("link", name="统一身份认证登录（IAAA）").click()
-        page.get_by_role("textbox", name="User ID / PKU Email / Cell").fill("2200015825")
-        page.get_by_role("textbox", name="User ID / PKU Email / Cell").press("Tab")
-        page.get_by_role("textbox", name="Password").fill("Roujin520")
-        page.get_by_role("button", name="Login", exact=True).click()
-        wait_for_target_date(page, target_date_text)
-        if DEBUG_DUMP_TABLE:
-            dump_booking_table_debug(page)
-            should_pause = True
-            return
+        try:
+            page.goto("https://epe.pku.edu.cn/venue/venue-reservation/86")
+            page.get_by_role("button", name="确定").click()
+            page.get_by_role("link", name="统一身份认证登录（IAAA）").click()
+            page.get_by_role("textbox", name="User ID / PKU Email / Cell").fill("2200015825")
+            page.get_by_role("textbox", name="User ID / PKU Email / Cell").press("Tab")
+            page.get_by_role("textbox", name="Password").fill("Roujin520")
+            page.get_by_role("button", name="Login", exact=True).click()
+            wait_for_target_date(page, target_date_text)
+            if DEBUG_DUMP_TABLE:
+                dump_booking_table_debug(page)
+                should_pause = True
+                return
 
-        selected_venue_no, selected_time = click_venue_by_semantics(
-            page,
-            TARGET_VENUE_NO,
-            TARGET_TIME_RANGE,
-            wait_for_page_ready,
-        )
-        print(f"已选择场地: {selected_venue_no}号场 {normalize_time_range(selected_time)}")
-        page.get_by_role("checkbox", name="已阅读并同意").check()
-        page.get_by_text("提交", exact=True).click()
-        max_captcha_retries = 10
-        for captcha_attempt in range(1, max_captcha_retries + 1):
-            try:
-                solve_click_captcha(
-                    page,
-                    before_click_delay=CAPTCHA_BEFORE_CLICK_DELAY,
-                    click_interval=CAPTCHA_CLICK_INTERVAL,
-                    after_click_delay=CAPTCHA_AFTER_CLICK_DELAY,
-                )
-                break
-            except Exception as exc:
-                print(f"ddddocr 自动识别失败 (第{captcha_attempt}次): {exc}")
-                if captcha_attempt < max_captcha_retries:
-                    print("点击刷新按钮重试验证码")
-                    # page.locator(".iconfont.icon-refresh").click()
-                    # 似乎下面这个才是正确的刷新按钮，前者有时候点击了没反应
-                    page.locator(".verify-refresh").click()
-                    page.wait_for_timeout(CAPTCHA_REFRESH_DELAY * 1000)  # 固定等待验证码加载出来
-                else:
-                    print(f"验证码重试已达上限 ({max_captcha_retries} 次)，放弃")
-        page.pause()
-    except Exception as exc:
-        should_pause = True
-        print(f"运行出错，已暂停浏览器供手动接管: {exc}")
-    finally:
-        if should_pause:
+            selected_venue_no, selected_time = click_venue_by_semantics(
+                page,
+                venue_no,
+                TARGET_TIME_RANGE,
+                wait_for_page_ready,
+            )
+            print(f"{prefix} 已选择场地: {selected_venue_no}号场 {normalize_time_range(selected_time)}")
+            page.get_by_role("checkbox", name="已阅读并同意").check()
+            page.get_by_text("提交", exact=True).click()
+            max_captcha_retries = 10
+            for captcha_attempt in range(1, max_captcha_retries + 1):
+                try:
+                    solve_click_captcha(
+                        page,
+                        before_click_delay=CAPTCHA_BEFORE_CLICK_DELAY,
+                        click_interval=CAPTCHA_CLICK_INTERVAL,
+                        after_click_delay=CAPTCHA_AFTER_CLICK_DELAY,
+                    )
+                    break
+                except Exception as exc:
+                    print(f"{prefix} ddddocr 自动识别失败 (第{captcha_attempt}次): {exc}")
+                    if captcha_attempt < max_captcha_retries:
+                        print(f"{prefix} 点击刷新按钮重试验证码")
+                        # page.locator(".iconfont.icon-refresh").click()
+                        # 似乎下面这个才是正确的刷新按钮，前者有时候点击了没反应
+                        page.locator(".verify-refresh").click()
+                        page.wait_for_timeout(CAPTCHA_REFRESH_DELAY * 1000)  # 固定等待验证码加载出来
+                    else:
+                        print(f"{prefix} 验证码重试已达上限 ({max_captcha_retries} 次)，放弃")
             page.pause()
-        context.close()
-        browser.close()
+        except Exception as exc:
+            should_pause = True
+            print(f"{prefix} 运行出错，已暂停浏览器供手动接管: {exc}")
+        finally:
+            if should_pause:
+                page.pause()
+            context.close()
+            browser.close()
 
 
-with sync_playwright() as playwright:
-    run(playwright)
+if __name__ == "__main__":
+    venue_list = [TARGET_VENUE_NO] if isinstance(TARGET_VENUE_NO, int) else TARGET_VENUE_NO
+    print(f"将并行启动 {len(venue_list)} 个 session: {venue_list}")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(venue_list)) as executor:
+        futures = [executor.submit(run_for_venue, v) for v in venue_list]
+        concurrent.futures.wait(futures)
