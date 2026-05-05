@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import time
 from playwright.sync_api import Playwright, sync_playwright
-from booking_table import click_venue_by_semantics, normalize_time_range
+from booking_table import click_venue_by_semantics, normalize_time_range, reset_claims
 from captcha_solver import solve_click_captcha
 
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
@@ -12,14 +12,14 @@ TARGET_DAYS_AHEAD = 3
 REFRESH_START_HOUR = 12
 REFRESH_START_MINUTE = 00
 REFRESH_START_SECOND = 00
-TARGET_VENUE_NO = [3, 4]  # int 或 list[int]，list 会并行抢多个场地
+TARGET_VENUE_NO = [7, 8]  # int 或 list[int]，list 会并行抢多个场地，2345 真抢不到
 # TARGET_TIME_RANGE 按优先顺序排列，前面优先尝试；若某时间段无可用场地则自动尝试下一个
 TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","19:00-20:00"] # work day
 # TARGET_TIME_RANGE = ["16:00-17:00","15:00-16:00","20:00-21:00","21:00-22:00","19:00-20:00"] # weekend
 # TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","06:50-07:50"]  # debug
 # 这组参数是可以的，点太快会报非法校验
 CAPTCHA_BEFORE_CLICK_DELAY = 1 # 似乎这里开大点就行
-CAPTCHA_CLICK_INTERVAL = 0.1  # 这里 0.2就不行,0.35有时候也非法校验
+CAPTCHA_CLICK_INTERVAL = 0.1  #
 CAPTCHA_AFTER_CLICK_DELAY = 0
 CAPTCHA_REFRESH_DELAY = 1  # 点击刷新按钮后固定等待秒数
 DEBUG_DUMP_TABLE = os.getenv("DEBUG_DUMP_TABLE") == "1"
@@ -183,6 +183,7 @@ def run_for_venue(venue_no: int) -> None:
 
 if __name__ == "__main__":
     venue_list = [TARGET_VENUE_NO] if isinstance(TARGET_VENUE_NO, int) else TARGET_VENUE_NO
+    reset_claims()
     print(f"将并行启动 {len(venue_list)} 个 session: {venue_list}")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(venue_list)) as executor:

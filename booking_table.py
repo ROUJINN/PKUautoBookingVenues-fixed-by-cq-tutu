@@ -1,4 +1,24 @@
 import re
+import threading
+
+# 并行模式下，各线程通过此集合协调，避免 fallback 时抢同一个场地
+_claimed_venues: set[int] = set()
+_claimed_lock = threading.Lock()
+
+
+def claim_venue(venue_no: int) -> bool:
+    """尝试认领一个场地号，返回 True 表示成功，False 表示已被其他线程认领。"""
+    with _claimed_lock:
+        if venue_no in _claimed_venues:
+            return False
+        _claimed_venues.add(venue_no)
+        return True
+
+
+def reset_claims() -> None:
+    """重置所有认领记录（新一轮抢场前调用）。"""
+    with _claimed_lock:
+        _claimed_venues.clear()
 
 
 def normalize_time_range(text: str) -> str:
@@ -152,8 +172,15 @@ def click_reservation_cell(cell) -> None:
     clickable.click()
 
 
-def _try_book_time_column(page, venue_no: int, time_range: str, time_column: int):
-    """尝试在指定时间列预订目标场地，返回 (venue_no, time_range) 或 None 表示该时间列无可用场地。"""
+def _try_book_time_column(page, venue_no: int, time_range: str, time_column: int, allow_fallback: bool = True):
+    """尝试在指定时间列预订目标场地，返回 (venue_no, time_range) 或 None 表示该时间列无可用场地。
+
+    allow_fallback=True 时，目标场地不可用会尝试其他可用场地；
+    通过 claim_venue 协调机制确保并行线程不会抢同一个 fallback 场地。
+    """
+    # 先认领自己的目标场地号，防止其他线程 fallback 到这里
+    claim_venue(venue_no)
+
     rows = page.locator("#scrollTable tbody tr")
     fallback_cells = []
     found_target_venue = False
@@ -177,17 +204,23 @@ def _try_book_time_column(page, venue_no: int, time_range: str, time_column: int
                 click_reservation_cell(cell)
                 return venue_no, time_range
 
-        if is_available:
+        if is_available and allow_fallback:
             fallback_cells.append((current_venue_no, cell))
 
-    if fallback_cells:
-        fallback_venue_no, fallback_cell = fallback_cells[0]
+    if allow_fallback and fallback_cells:
+        # 从可用场地中挑第一个未被其他线程认领的
+        for fallback_venue_no, fallback_cell in fallback_cells:
+            if claim_venue(fallback_venue_no):
+                print(
+                    f"{venue_no}号场在 {normalize_time_range(time_range)} 不可订，"
+                    f"改点同时间的 {fallback_venue_no}号场"
+                )
+                click_reservation_cell(fallback_cell)
+                return fallback_venue_no, time_range
         print(
             f"{venue_no}号场在 {normalize_time_range(time_range)} 不可订，"
-            f"改点同时间的 {fallback_venue_no}号场"
+            f"且所有可用场地均已被其他线程认领"
         )
-        click_reservation_cell(fallback_cell)
-        return fallback_venue_no, time_range
 
     if not found_target_venue:
         raise RuntimeError("当前表格没有找到场地行，可能还未到开放时间或页面未加载出可预约场地")
@@ -195,10 +228,11 @@ def _try_book_time_column(page, venue_no: int, time_range: str, time_column: int
     return None
 
 
-def click_venue_by_semantics(page, venue_no: int, time_ranges: list[str], wait_for_page_ready) -> tuple[int, str]:
+def click_venue_by_semantics(page, venue_no: int, time_ranges: list[str], wait_for_page_ready, *, allow_fallback: bool = True) -> tuple[int, str]:
     """按优先级依次尝试多个时间段，返回 (场地号, 实际选定的时间段)。
 
     time_ranges 为优先顺序列表，越靠前优先级越高。
+    allow_fallback=False 时，目标场地不可用不会抢其他场地，避免并行线程冲突。
     """
     wait_for_table_rendered(page, wait_for_page_ready)
     unavailable_ranges = []
@@ -210,7 +244,7 @@ def click_venue_by_semantics(page, venue_no: int, time_ranges: list[str], wait_f
             print(f"时间段 {normalize_time_range(time_range)} 在表格中不存在，跳过")
             continue
 
-        result = _try_book_time_column(page, venue_no, time_range, time_column)
+        result = _try_book_time_column(page, venue_no, time_range, time_column, allow_fallback=allow_fallback)
         if result is not None:
             return result
 
