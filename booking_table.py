@@ -74,8 +74,17 @@ def click_next_time_page(page, wait_for_page_ready) -> bool:
     for button in next_buttons:
         if button.count() == 0:
             continue
+        old_headers = get_visible_time_columns(page)
         button.first.click()
-        wait_for_table_rendered(page, wait_for_page_ready)
+        # 等表头真的变化，确认翻页生效
+        for _ in range(10):
+            page.wait_for_timeout(200)
+            new_headers = get_visible_time_columns(page)
+            if new_headers != old_headers:
+                wait_for_page_ready(page)
+                return True
+        # 表头没变，翻页可能未生效，仍然返回 True 让外层 seen_headers 判断
+        wait_for_page_ready(page)
         return True
 
     return False
@@ -112,8 +121,17 @@ def click_prev_time_page(page, wait_for_page_ready) -> bool:
     button = page.locator("#scrollTable .ivu-table-cell > .ivu-icon").first
     if button.count() == 0:
         return False
+    old_headers = get_visible_time_columns(page)
     button.click()
-    wait_for_table_rendered(page, wait_for_page_ready)
+    # 等表头真的变化，确认翻页生效
+    for _ in range(10):
+        page.wait_for_timeout(200)
+        new_headers = get_visible_time_columns(page)
+        if new_headers != old_headers:
+            wait_for_page_ready(page)
+            return True
+    # 表头没变，翻页可能未生效
+    wait_for_page_ready(page)
     return True
 
 
@@ -121,8 +139,10 @@ def find_time_column(page, target_time_range: str, wait_for_page_ready) -> int:
     target_time_range = normalize_time_range(target_time_range)
     target_start = _parse_start_minutes(target_time_range)
     seen_headers = set()
+    stuck_count = 0
+    max_stuck_retries = 3
 
-    for _ in range(8):
+    for _ in range(12):
         time_columns = get_visible_time_columns(page)
         if target_time_range in time_columns:
             print(f"找到目标时间列: {target_time_range}")
@@ -130,8 +150,14 @@ def find_time_column(page, target_time_range: str, wait_for_page_ready) -> int:
 
         header_signature = tuple(time_columns)
         if header_signature in seen_headers:
+            stuck_count += 1
+            if stuck_count <= max_stuck_retries:
+                print(f"翻页似乎卡住，等待后重试 ({stuck_count}/{max_stuck_retries})")
+                page.wait_for_timeout(500)
+                continue
             break
         seen_headers.add(header_signature)
+        stuck_count = 0
 
         # 根据目标时间与当前可见时间的比较决定翻页方向
         direction = _decide_page_direction(time_columns, target_start)
