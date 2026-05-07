@@ -49,6 +49,11 @@ def extract_venue_no(text: str) -> int | None:
 def wait_for_table_rendered(page, wait_for_page_ready) -> None:
     page.locator("#scrollTable table").wait_for(state="visible", timeout=10_000)
     wait_for_page_ready(page)
+    # 等翻页按钮出现，确保表格数据已完全加载
+    try:
+        page.locator("#scrollTable .ivu-icon").first.wait_for(state="visible", timeout=5_000)
+    except Exception:
+        pass
 
 
 def get_visible_time_columns(page) -> dict[str, int]:
@@ -64,7 +69,8 @@ def get_visible_time_columns(page) -> dict[str, int]:
     return time_columns
 
 
-def click_next_time_page(page, wait_for_page_ready) -> bool:
+def _try_click_next_once(page, wait_for_page_ready) -> bool | None:
+    """尝试点击下一页按钮一次。返回 True=成功, False=按钮不存在, None=点击了但表头未变。"""
     next_buttons = [
         page.locator("#scrollTable thead tr td").last.locator(".ivu-icon"),
         page.locator("#scrollTable tbody tr").first.locator("td").last.locator(".ivu-icon"),
@@ -76,17 +82,30 @@ def click_next_time_page(page, wait_for_page_ready) -> bool:
             continue
         old_headers = get_visible_time_columns(page)
         button.first.click()
-        # 等表头真的变化，确认翻页生效
-        for _ in range(10):
+        # 等表头真的变化，确认翻页生效（并发时渲染可能很慢，给足时间）
+        for _ in range(25):
             page.wait_for_timeout(200)
             new_headers = get_visible_time_columns(page)
             if new_headers != old_headers:
                 wait_for_page_ready(page)
                 return True
-        # 表头没变，翻页可能未生效，仍然返回 True 让外层 seen_headers 判断
+        # 表头没变，翻页可能未生效
         wait_for_page_ready(page)
-        return True
+        return None
 
+    return False
+
+
+def click_next_time_page(page, wait_for_page_ready) -> bool:
+    # 翻页按钮可能因数据未加载完而暂不存在，重试等待
+    for attempt in range(5):
+        result = _try_click_next_once(page, wait_for_page_ready)
+        if result is True:
+            return True
+        if result is None:
+            return True  # 点击了但表头未变，交给外层 seen_headers 判断
+        # result is False: 按钮不存在，等一下重试
+        page.wait_for_timeout(400)
     return False
 
 
@@ -117,22 +136,32 @@ def _decide_page_direction(time_columns: dict[str, int], target_start: int | Non
     return 0  # 目标在当前范围内但未精确匹配，默认向后
 
 
-def click_prev_time_page(page, wait_for_page_ready) -> bool:
+def _try_click_prev_once(page, wait_for_page_ready) -> bool | None:
+    """尝试点击上一页按钮一次。返回 True=成功, False=按钮不存在, None=点击了但表头未变。"""
     button = page.locator("#scrollTable .ivu-table-cell > .ivu-icon").first
     if button.count() == 0:
         return False
     old_headers = get_visible_time_columns(page)
     button.click()
-    # 等表头真的变化，确认翻页生效
-    for _ in range(10):
+    for _ in range(25):
         page.wait_for_timeout(200)
         new_headers = get_visible_time_columns(page)
         if new_headers != old_headers:
             wait_for_page_ready(page)
             return True
-    # 表头没变，翻页可能未生效
     wait_for_page_ready(page)
-    return True
+    return None
+
+
+def click_prev_time_page(page, wait_for_page_ready) -> bool:
+    for attempt in range(5):
+        result = _try_click_prev_once(page, wait_for_page_ready)
+        if result is True:
+            return True
+        if result is None:
+            return True
+        page.wait_for_timeout(400)
+    return False
 
 
 def find_time_column(page, target_time_range: str, wait_for_page_ready) -> int:
@@ -140,9 +169,11 @@ def find_time_column(page, target_time_range: str, wait_for_page_ready) -> int:
     target_start = _parse_start_minutes(target_time_range)
     seen_headers = set()
     stuck_count = 0
-    max_stuck_retries = 3
+    max_stuck_retries = 5
+    pagination_fail_count = 0
+    max_pagination_retries = 5
 
-    for _ in range(12):
+    for _ in range(20):
         time_columns = get_visible_time_columns(page)
         if target_time_range in time_columns:
             print(f"找到目标时间列: {target_time_range}")
@@ -153,7 +184,7 @@ def find_time_column(page, target_time_range: str, wait_for_page_ready) -> int:
             stuck_count += 1
             if stuck_count <= max_stuck_retries:
                 print(f"翻页似乎卡住，等待后重试 ({stuck_count}/{max_stuck_retries})")
-                page.wait_for_timeout(500)
+                page.wait_for_timeout(1000)
                 continue
             break
         seen_headers.add(header_signature)
@@ -164,15 +195,31 @@ def find_time_column(page, target_time_range: str, wait_for_page_ready) -> int:
         if direction > 0:
             print(f"当前可见时间: {', '.join(time_columns) or '无'}，目标 {target_time_range} 在后方，继续向后翻页")
             if not click_next_time_page(page, wait_for_page_ready):
+                pagination_fail_count += 1
+                if pagination_fail_count <= max_pagination_retries:
+                    print(f"翻页按钮不存在，等待后重试 ({pagination_fail_count}/{max_pagination_retries})")
+                    page.wait_for_timeout(1000)
+                    continue
                 break
         elif direction < 0:
             print(f"当前可见时间: {', '.join(time_columns) or '无'}，目标 {target_time_range} 在前方，继续向前翻页")
             if not click_prev_time_page(page, wait_for_page_ready):
+                pagination_fail_count += 1
+                if pagination_fail_count <= max_pagination_retries:
+                    print(f"翻页按钮不存在，等待后重试 ({pagination_fail_count}/{max_pagination_retries})")
+                    page.wait_for_timeout(1000)
+                    continue
                 break
         else:
             print(f"当前可见时间: {', '.join(time_columns) or '无'}，无法判断翻页方向，继续向后翻页")
             if not click_next_time_page(page, wait_for_page_ready):
+                pagination_fail_count += 1
+                if pagination_fail_count <= max_pagination_retries:
+                    print(f"翻页按钮不存在，等待后重试 ({pagination_fail_count}/{max_pagination_retries})")
+                    page.wait_for_timeout(1000)
+                    continue
                 break
+        pagination_fail_count = 0
 
     raise RuntimeError(f"找不到目标时间段: {target_time_range}")
 
