@@ -12,7 +12,7 @@ TARGET_DAYS_AHEAD = 3
 REFRESH_START_HOUR = 12
 REFRESH_START_MINUTE = 00
 REFRESH_START_SECOND = 00
-TARGET_VENUE_NO = [7, 8]  # int 或 list[int]，list 会并行抢多个场地，2345 真抢不到
+TARGET_VENUE_NO = [3,4,5,6]  # int 或 list[int]，list 会并行抢多个场地，2345 真抢不到
 # TARGET_TIME_RANGE 按优先顺序排列，前面优先尝试；若某时间段无可用场地则自动尝试下一个
 TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","19:00-20:00"] # work day
 # TARGET_TIME_RANGE = ["16:00-17:00","15:00-16:00","20:00-21:00","21:00-22:00","19:00-20:00"] # weekend
