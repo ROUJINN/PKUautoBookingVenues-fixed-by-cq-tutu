@@ -7,12 +7,20 @@ from playwright.sync_api import Playwright, sync_playwright
 from booking_table import click_venue_by_semantics, normalize_time_range, reset_claims
 from captcha_solver import solve_click_captcha
 
+
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 TARGET_DAYS_AHEAD = 3
 REFRESH_START_HOUR = 12
 REFRESH_START_MINUTE = 00
 REFRESH_START_SECOND = 00
-TARGET_VENUE_NO = [3,4,5,6]  # int 或 list[int]，list 会并行抢多个场地，2345 真抢不到
+# TARGET_PAGE = "https://epe.pku.edu.cn/venue/venue-reservation/86" # 五四
+TARGET_PAGE = "https://epe.pku.edu.cn/venue/venue-reservation/60" # 邱德拔
+# TARGET_PAGE = "https://epe.pku.edu.cn/venue/venue-reservation/85" # 网球
+# 联网问题，把 clash verge 的 system proxy 和 tun mode 都关了即可
+
+TARGET_VENUE_NO = [3,4,5,6,7,8]  # 羽毛球
+# TARGET_VENUE_NO = [1,2,3,4] # 网球
+# TARGET_VENUE_NO = [3] # debug
 # TARGET_TIME_RANGE 按优先顺序排列，前面优先尝试；若某时间段无可用场地则自动尝试下一个
 TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","19:00-20:00"] # work day
 # TARGET_TIME_RANGE = ["16:00-17:00","15:00-16:00","20:00-21:00","21:00-22:00","19:00-20:00"] # weekend
@@ -22,6 +30,7 @@ CAPTCHA_BEFORE_CLICK_DELAY = 1 # 似乎这里开大点就行
 CAPTCHA_CLICK_INTERVAL = 0.1  #
 CAPTCHA_AFTER_CLICK_DELAY = 0
 CAPTCHA_REFRESH_DELAY = 1  # 点击刷新按钮后固定等待秒数
+MAX_CAPTCHA_RETRIES = 10
 DEBUG_DUMP_TABLE = os.getenv("DEBUG_DUMP_TABLE") == "1"
 DEBUG_DIR = Path("debug_artifacts")
 # 
@@ -128,12 +137,12 @@ def run_for_venue(venue_no: int) -> None:
         should_pause = False
 
         try:
-            page.goto("https://epe.pku.edu.cn/venue/venue-reservation/86")
+            page.goto(TARGET_PAGE)
             page.get_by_role("button", name="确定").click()
             page.get_by_role("link", name="统一身份认证登录（IAAA）").click()
-            page.get_by_role("textbox", name="User ID / PKU Email / Cell").fill("2200015825")
+            page.get_by_role("textbox", name="User ID / PKU Email / Cell").fill("2200011351")
             page.get_by_role("textbox", name="User ID / PKU Email / Cell").press("Tab")
-            page.get_by_role("textbox", name="Password").fill("Roujin520")
+            page.get_by_role("textbox", name="Password").fill("luo041010")
             page.get_by_role("button", name="Login", exact=True).click()
             wait_for_target_date(page, target_date_text)
             if DEBUG_DUMP_TABLE:
@@ -150,8 +159,7 @@ def run_for_venue(venue_no: int) -> None:
             print(f"{prefix} 已选择场地: {selected_venue_no}号场 {normalize_time_range(selected_time)}")
             page.get_by_role("checkbox", name="已阅读并同意").check()
             page.get_by_text("提交", exact=True).click()
-            max_captcha_retries = 10
-            for captcha_attempt in range(1, max_captcha_retries + 1):
+            for captcha_attempt in range(1, MAX_CAPTCHA_RETRIES + 1):
                 try:
                     solve_click_captcha(
                         page,
@@ -162,14 +170,14 @@ def run_for_venue(venue_no: int) -> None:
                     break
                 except Exception as exc:
                     print(f"{prefix} ddddocr 自动识别失败 (第{captcha_attempt}次): {exc}")
-                    if captcha_attempt < max_captcha_retries:
+                    if captcha_attempt < MAX_CAPTCHA_RETRIES:
                         print(f"{prefix} 点击刷新按钮重试验证码")
                         # page.locator(".iconfont.icon-refresh").click()
                         # 似乎下面这个才是正确的刷新按钮，前者有时候点击了没反应
                         page.locator(".verify-refresh").click()
                         page.wait_for_timeout(CAPTCHA_REFRESH_DELAY * 1000)  # 固定等待验证码加载出来
                     else:
-                        print(f"{prefix} 验证码重试已达上限 ({max_captcha_retries} 次)，放弃")
+                        print(f"{prefix} 验证码重试已达上限 ({MAX_CAPTCHA_RETRIES} 次)，放弃")
             page.pause()
         except Exception as exc:
             should_pause = True
