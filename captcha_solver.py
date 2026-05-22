@@ -2,6 +2,7 @@ import io
 import re
 import time
 import datetime
+import hashlib
 from pathlib import Path
 
 from PIL import Image
@@ -18,6 +19,7 @@ _TEXT_DETECTOR = None
 _TEXT_CLASSIFIER = None
 CAPTCHA_IMAGE_XPATH = "/html/body/div[1]/div/div/div[3]/div[2]/div/div[1]/div[2]/div[4]/div[3]/div/div[2]/div/div[1]/div/img"
 CAPTCHA_ORDER_XPATH = "/html/body/div[1]/div/div/div[3]/div[2]/div/div[1]/div[2]/div[4]/div[3]/div/div[2]/div/div[2]/span"
+CAPTCHA_REFRESH_SELECTOR = ".verify-refresh"
 
 
 def get_ocr_engines():
@@ -135,6 +137,45 @@ def solve_click_captcha(
 
     page.wait_for_timeout(int(after_click_delay * 1000))
     print("验证码点击完成")
+
+
+def wait_for_captcha_refresh(
+    page,
+    timeout_seconds: float = 5.0,
+    poll_interval_seconds: float = 0.2,
+) -> None:
+    captcha_image = page.locator(f"xpath={CAPTCHA_IMAGE_XPATH}")
+    refresh_button = page.locator(CAPTCHA_REFRESH_SELECTOR)
+
+    captcha_image.wait_for(state="visible", timeout=10000)
+    old_src = captcha_image.get_attribute("src")
+    old_hash = _screenshot_hash(captcha_image)
+
+    refresh_button.click()
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        page.wait_for_timeout(int(poll_interval_seconds * 1000))
+        try:
+            captcha_image.wait_for(state="visible", timeout=1000)
+            new_src = captcha_image.get_attribute("src")
+            new_hash = _screenshot_hash(captcha_image)
+        except Exception:
+            continue
+
+        if new_src != old_src or (new_hash is not None and new_hash != old_hash):
+            print("验证码图片已刷新")
+            return
+
+    raise RuntimeError(f"验证码刷新后 {timeout_seconds:.1f} 秒内图片未变化")
+
+
+def _screenshot_hash(locator) -> str | None:
+    try:
+        image_bytes = locator.screenshot()
+    except Exception:
+        return None
+    return hashlib.sha256(image_bytes).hexdigest()
 
 
 def _save_captcha_for_debug(image_bytes: bytes, order_text: str) -> None:

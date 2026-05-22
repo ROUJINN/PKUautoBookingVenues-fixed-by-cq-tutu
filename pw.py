@@ -5,7 +5,7 @@ from pathlib import Path
 import time
 from playwright.sync_api import Playwright, sync_playwright
 from booking_table import click_venue_by_semantics, normalize_time_range, reset_claims
-from captcha_solver import solve_click_captcha
+from captcha_solver import solve_click_captcha, wait_for_captcha_refresh
 
 
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
@@ -29,8 +29,8 @@ TARGET_TIME_RANGE = ["20:00-21:00","21:00-22:00","19:00-20:00"] # work day
 CAPTCHA_BEFORE_CLICK_DELAY = 1 # 似乎这里开大点就行
 CAPTCHA_CLICK_INTERVAL = 0.1  #
 CAPTCHA_AFTER_CLICK_DELAY = 0
-CAPTCHA_REFRESH_DELAY = 1  # 点击刷新按钮后固定等待秒数
-MAX_CAPTCHA_RETRIES = 10
+CAPTCHA_REFRESH_DELAY = 5  # 点击刷新按钮后等待验证码图片变化的最长秒数
+MAX_CAPTCHA_RETRIES = 3 # 最多验证码失败后重试的次数
 DEBUG_DUMP_TABLE = os.getenv("DEBUG_DUMP_TABLE") == "1"
 DEBUG_DIR = Path("debug_artifacts")
 # 
@@ -172,10 +172,7 @@ def run_for_venue(venue_no: int) -> None:
                     print(f"{prefix} ddddocr 自动识别失败 (第{captcha_attempt}次): {exc}")
                     if captcha_attempt < MAX_CAPTCHA_RETRIES:
                         print(f"{prefix} 点击刷新按钮重试验证码")
-                        # page.locator(".iconfont.icon-refresh").click()
-                        # 似乎下面这个才是正确的刷新按钮，前者有时候点击了没反应
-                        page.locator(".verify-refresh").click()
-                        page.wait_for_timeout(CAPTCHA_REFRESH_DELAY * 1000)  # 固定等待验证码加载出来
+                        wait_for_captcha_refresh(page, timeout_seconds=CAPTCHA_REFRESH_DELAY)
                     else:
                         print(f"{prefix} 验证码重试已达上限 ({MAX_CAPTCHA_RETRIES} 次)，放弃")
             page.pause()
